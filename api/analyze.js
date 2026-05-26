@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
