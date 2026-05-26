@@ -1,0 +1,8 @@
+{
+  "name": "youcam-shopify-backend",
+  "version": "1.0.0",
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "resend": "^3.0.0"
+  }
+}
