@@ -18,17 +18,20 @@ export default async function handler(req, res) {
 
   try {
     // 1. Appel de l'API Perfect Corp avec tes 4 options
-    const perfectCorpResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        "image_data": image.replace(/^data:image\/\w+;base64,/, ""),
-        "dst_actions": ["acne", "pore", "spots", "wrinkle"] // Tes 4 options
-      })
-    });
+      const perfectCorpResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          "image_data": image.replace(/^data:image\/\w+;base64,/, ""),
+          "concerns": ["acne", "pore", "spots", "wrinkle"]  // ✅ "concerns" au lieu de "dst_actions"
+        })
+      });
+
+const data = await perfectCorpResponse.json();
+console.log('Perfect Corp response:', JSON.stringify(data));
 
     const data = await perfectCorpResponse.json();
 
@@ -101,7 +104,7 @@ export default async function handler(req, res) {
 
     // 5. Envoi du mail
     await resend.emails.send({
-      from: 'Cosmétique Lab <diagnostic@ta-boutique.com>',
+      from: 'Nuhanciam <diagnostic@nuhanciam.com>',
       to: email,
       subject: '✨ Votre cartographie cutanée personnalisée',
       html: `
