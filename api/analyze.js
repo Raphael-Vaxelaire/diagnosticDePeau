@@ -14,8 +14,15 @@ export default async function handler(req, res) {
   const { email, image } = req.body;
 
   try {
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+   // Nettoyage robuste de la string Base64 reçue
+    let base64Data = image;
+    if (base64Data.includes(',')) {
+      base64Data = base64Data.split(',')[1];
+    }
     const imageBuffer = Buffer.from(base64Data, 'base64');
+
+    // Reconstruction d'une dataURL propre pour le Canvas Node.js
+    const cleanCanvasImage = `data:image/jpeg;base64,${base64Data}`;
 
     // ETAPE 1 : Obtenir une URL d'upload signée
     const fileResponse = await fetch('https://yce-api-01.makeupar.com/s2s/v2.0/file/skin-analysis', {
