@@ -15,10 +15,10 @@ const KLAVIYO_REVISION = process.env.KLAVIYO_REVISION || '2026-04-15';
 const KLAVIYO_EVENT_NAME = 'Diagnostic de Peau termine';
 
 const ANALYSIS_ACTIONS = [
-  { type: 'acne', scoreKey: 'acne', color: '#9b59b6', opacity: 0.55 },
-  { type: 'pore', scoreKey: 'pore', color: '#2ecc71', opacity: 0.42 },
-  { type: 'age_spot', scoreKey: 'spots', color: '#f1c40f', opacity: 0.5 },
-  { type: 'wrinkle', scoreKey: 'wrinkle', color: '#e74c3c', opacity: 0.55 }
+  { type: 'acne', scoreKey: 'acne', color: '#b700ff', opacity: 0.70 },
+  { type: 'pore', scoreKey: 'pore', color: '#00ff6a', opacity: 0.70 },
+  { type: 'age_spot', scoreKey: 'spots', color: '#ffcc00', opacity: 0.70 },
+  { type: 'wrinkle', scoreKey: 'wrinkle', color: '#ff1900', opacity: 0.70 }
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
