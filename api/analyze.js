@@ -34,16 +34,14 @@ export default async function handler(req, res) {
     });
 
     const fileData = await fileResponse.json();
-    console.log('File response:', JSON.stringify(fileData));
 
-    // CORRECTION : Extraction de la bonne structure Perfect Corp
     if (!fileData.data || !fileData.data.files || !fileData.data.files[0]) {
       throw new Error('File creation échouée: ' + JSON.stringify(fileData));
     }
 
     const fileInfo = fileData.data.files[0];
     const file_id = fileInfo.file_id;
-    const upload_url = fileInfo.requests[0].url; // <-- L'URL était cachée ici !
+    const upload_url = fileInfo.requests[0].url;
 
     // ETAPE 2 : Uploader l'image sur l'URL signée
     const uploadResponse = await fetch(upload_url, {
@@ -55,9 +53,7 @@ export default async function handler(req, res) {
       body: imageBuffer
     });
 
-    console.log('Upload status:', uploadResponse.status);
-
-    // ETAPE 3 : Lancer l'analyse
+    // ETAPE 3 : Lancer l'analyse (CORRECTION : "spots" devient "age_spot")
     const analysisResponse = await fetch('https://yce-api-01.makeupar.com/s2s/v2.0/task/skin-analysis', {
       method: 'POST',
       headers: {
@@ -66,12 +62,15 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         src_file_id: file_id,
-        dst_actions: ["acne", "pore", "spots", "wrinkle"]
+        dst_actions: ["acne", "pore", "age_spot", "wrinkle"] // <-- Modifié ici
       })
     });
 
     const analysisData = await analysisResponse.json();
-    console.log('Analysis response:', JSON.stringify(analysisData));
+
+    if (analysisData.status === 400 || analysisData.error) {
+      throw new Error('Analyse Perfect Corp échouée: ' + JSON.stringify(analysisData));
+    }
 
     // ETAPE 4 : Canvas avec la photo d'origine
     const imgSource = await loadImage(image);
@@ -105,10 +104,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // Taches (jaune)
-    if (skinData.spots && skinData.spots.areas) {
+    // Taches (jaune) - CORRECTION : skinData.spots devient skinData.age_spot
+    const spotsData = skinData.age_spot || skinData.spots;
+    if (spotsData && spotsData.areas) {
       ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
-      skinData.spots.areas.forEach(area => {
+      spotsData.areas.forEach(area => {
         const radius = Math.max(area.width, area.height) / 2;
         const centerX = area.x + radius;
         const centerY = area.y + radius;
@@ -130,17 +130,17 @@ export default async function handler(req, res) {
     // Export base64
     const finalImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-    // Scores
+    // Scores (CORRECTION : adaptation au format age_spot)
     const scores = {
       acne: skinData.acne?.ui_score ?? 100,
       pore: skinData.pore?.ui_score ?? 100,
-      spots: skinData.spots?.ui_score ?? 100,
+      spots: (skinData.age_spot?.ui_score ?? skinData.spots?.ui_score) ?? 100,
       wrinkle: skinData.wrinkle?.ui_score ?? 100
     };
 
-    // Envoi email
+    // Envoi email (CORRECTION : adresse "from" temporaire de test pour éviter la 403)
     await resend.emails.send({
-      from: 'Nuhanciam <diagnostic@nuhanciam.com>',
+      from: 'Diagnostic Peau <onboarding@resend.dev>', // <-- Modifié temporairement
       to: email,
       subject: '✨ Votre cartographie cutanée personnalisée',
       html: `
@@ -157,9 +157,6 @@ export default async function handler(req, res) {
             <li style="padding: 8px 0; border-bottom: 1px solid #f5f5f5;">🟡 <strong>Taches / Hyperpigmentation :</strong> ${scores.spots}/100</li>
             <li style="padding: 8px 0; border-bottom: 1px solid #f5f5f5;">🔴 <strong>Rides & Ridules :</strong> ${scores.wrinkle}/100</li>
           </ul>
-          <p style="font-size: 12px; color: #777; margin-top: 20px;">
-            *Note : Plus le score est proche de 100, plus la peau est saine sur ce critère.
-          </p>
         </div>
       `
     });
