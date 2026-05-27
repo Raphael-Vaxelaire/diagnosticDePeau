@@ -116,7 +116,41 @@ function cleanInputImage(image) {
     dataUrl: `data:${contentType};base64,${base64Data}`
   };
 }
+async function resizeImageIfTooSmall(cleanImage) {
+  const img = await loadImage(cleanImage.dataUrl);
 
+  const minShortSide = 480;
+  const width = img.width;
+  const height = img.height;
+  const shortSide = Math.min(width, height);
+
+  if (shortSide >= minShortSide) {
+    return cleanImage;
+  }
+
+  const scale = minShortSide / shortSide;
+  const newWidth = Math.round(width * scale);
+  const newHeight = Math.round(height * scale);
+
+  const canvas = createCanvas(newWidth, newHeight);
+  const ctx = canvas.getContext('2d');
+
+  ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+  const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  const resizedBase64 = resizedDataUrl.split(',')[1];
+  const resizedBuffer = Buffer.from(resizedBase64, 'base64');
+
+  console.log(`Image redimensionnee: ${width}x${height} -> ${newWidth}x${newHeight}`);
+
+  return {
+    contentType: 'image/jpeg',
+    extension: 'jpg',
+    base64Data: resizedBase64,
+    imageBuffer: resizedBuffer,
+    dataUrl: resizedDataUrl
+  };
+}
 async function createPerfectCorpFile({ contentType, extension, imageBuffer }) {
   const response = await fetch(`${PERFECT_API_BASE}/file/skin-analysis`, {
     method: 'POST',
@@ -392,7 +426,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Email invalide' });
     }
 
-    const cleanImage = cleanInputImage(image);
+    let cleanImage = cleanInputImage(image);
+    cleanImage = await resizeImageIfTooSmall(cleanImage);
 
     const fileInfo = await createPerfectCorpFile(cleanImage);
     await uploadImageToPerfectCorp(fileInfo, cleanImage.imageBuffer, cleanImage.contentType);
