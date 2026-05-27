@@ -10,7 +10,7 @@ export default async function handler(req, res) {
 
   try {
     // 1. Appel de l'API Perfect Corp avec tes 4 options
-    const perfectCorpResponse = await fetch('https://yce-api-01.makeupar.com/s2s/v2.0/task/skin-analysis', {
+    const perfectCorpResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
