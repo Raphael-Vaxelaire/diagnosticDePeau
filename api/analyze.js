@@ -36,16 +36,22 @@ export default async function handler(req, res) {
     const fileData = await fileResponse.json();
     console.log('File response:', JSON.stringify(fileData));
 
-    if (!fileData.files || !fileData.files[0]) {
+    // CORRECTION : Extraction de la bonne structure Perfect Corp
+    if (!fileData.data || !fileData.data.files || !fileData.data.files[0]) {
       throw new Error('File creation échouée: ' + JSON.stringify(fileData));
     }
 
-    const { upload_url, file_id } = fileData.files[0];
+    const fileInfo = fileData.data.files[0];
+    const file_id = fileInfo.file_id;
+    const upload_url = fileInfo.requests[0].url; // <-- L'URL était cachée ici !
 
     // ETAPE 2 : Uploader l'image sur l'URL signée
     const uploadResponse = await fetch(upload_url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'image/jpeg' },
+      headers: { 
+        'Content-Type': 'image/jpeg',
+        'Content-Length': imageBuffer.length.toString()
+      },
       body: imageBuffer
     });
 
