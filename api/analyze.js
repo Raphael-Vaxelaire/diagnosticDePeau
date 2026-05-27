@@ -437,6 +437,35 @@ export default async function handler(req, res) {
     if (!email || !String(email).includes('@')) {
       return res.status(400).json({ error: 'Email invalide' });
     }
+    if (req.query.test === 'klaviyo') {
+  const fakeScores = {
+    acne: 82,
+    pore: 74,
+    spots: 91,
+    wrinkle: 68
+  };
+
+  const fakeCartographieUrl =
+    'https://dummyimage.com/800x1000/f6f1ec/333333.jpg&text=Cartographie+test';
+
+  const fakeTaskId = `test-${Date.now()}`;
+
+  await sendKlaviyoDiagnosticEvent(
+    email,
+    fakeScores,
+    fakeCartographieUrl,
+    fakeTaskId,
+    ['test']
+  );
+
+  return res.status(200).json({
+    success: true,
+    test: true,
+    provider: 'klaviyo',
+    scores: fakeScores,
+    cartographieUrl: fakeCartographieUrl
+  });
+}
 
     let cleanImage = cleanInputImage(image);
     cleanImage = await resizeImageIfTooSmall(cleanImage);
