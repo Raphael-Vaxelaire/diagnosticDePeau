@@ -14,29 +14,51 @@ export default async function handler(req, res) {
   const { email, image } = req.body;
 
   try {
-    // 1. Appel Perfect Corp
-    const perfectCorpResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+
+    // ETAPE 1 : Upload de l'image pour obtenir un src_file_id
+    const uploadResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/file', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        image_data: image.replace(/^data:image\/\w+;base64,/, ""),
-        concerns: ["acne", "pore", "spots", "wrinkle"]
+        image_data: base64Data
       })
     });
 
-    const data = await perfectCorpResponse.json();
-    console.log('Perfect Corp response:', JSON.stringify(data));
+    const uploadData = await uploadResponse.json();
+    console.log('Upload response:', JSON.stringify(uploadData));
 
-    // 2. Canvas avec la photo d'origine
+    if (!uploadData.file_id) {
+      throw new Error('Upload échoué: ' + JSON.stringify(uploadData));
+    }
+
+    // ETAPE 2 : Lancer l'analyse avec le file_id
+    const analysisResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        src_file_id: uploadData.file_id,
+        dst_actions: ["acne", "pore", "spots", "wrinkle"]
+      })
+    });
+
+    const analysisData = await analysisResponse.json();
+    console.log('Analysis response:', JSON.stringify(analysisData));
+
+    // ETAPE 3 : Canvas avec la photo d'origine
     const imgSource = await loadImage(image);
     const canvas = createCanvas(imgSource.width, imgSource.height);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(imgSource, 0, 0);
 
-    const skinData = data.results || {};
+    const skinData = analysisData.results || {};
 
     // Rides (rouge)
     if (skinData.wrinkle && skinData.wrinkle.areas) {
@@ -84,10 +106,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. Export base64
+    // Export base64
     const finalImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-    // 4. Scores
+    // Scores
     const scores = {
       acne: skinData.acne?.ui_score ?? 100,
       pore: skinData.pore?.ui_score ?? 100,
@@ -95,7 +117,7 @@ export default async function handler(req, res) {
       wrinkle: skinData.wrinkle?.ui_score ?? 100
     };
 
-    // 5. Envoi email
+    // Envoi email
     await resend.emails.send({
       from: 'Nuhanciam <diagnostic@nuhanciam.com>',
       to: email,
