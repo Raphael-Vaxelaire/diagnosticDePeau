@@ -1,4 +1,3 @@
-import { Resend } from 'resend';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 export const config = {
@@ -9,40 +8,17 @@ export const config = {
   }
 };
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const PERFECT_API_VERSION = process.env.PERFECT_API_VERSION || 'v2.1';
 const PERFECT_API_BASE = `https://yce-api-01.makeupar.com/s2s/${PERFECT_API_VERSION}`;
 
+const KLAVIYO_REVISION = process.env.KLAVIYO_REVISION || '2026-04-15';
+const KLAVIYO_EVENT_NAME = 'Diagnostic de Peau termine';
+
 const ANALYSIS_ACTIONS = [
-  {
-    type: 'acne',
-    scoreKey: 'acne',
-    label: 'Acne / Imperfections',
-    color: '#9b59b6',
-    opacity: 0.55
-  },
-  {
-    type: 'pore',
-    scoreKey: 'pore',
-    label: 'Pores dilates',
-    color: '#2ecc71',
-    opacity: 0.42
-  },
-  {
-    type: 'age_spot',
-    scoreKey: 'spots',
-    label: 'Taches / Hyperpigmentation',
-    color: '#f1c40f',
-    opacity: 0.5
-  },
-  {
-    type: 'wrinkle',
-    scoreKey: 'wrinkle',
-    label: 'Rides & Ridules',
-    color: '#e74c3c',
-    opacity: 0.55
-  }
+  { type: 'acne', scoreKey: 'acne', color: '#9b59b6', opacity: 0.55 },
+  { type: 'pore', scoreKey: 'pore', color: '#2ecc71', opacity: 0.42 },
+  { type: 'age_spot', scoreKey: 'spots', color: '#f1c40f', opacity: 0.5 },
+  { type: 'wrinkle', scoreKey: 'wrinkle', color: '#e74c3c', opacity: 0.55 }
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -116,21 +92,20 @@ function cleanInputImage(image) {
     dataUrl: `data:${contentType};base64,${base64Data}`
   };
 }
+
 async function resizeImageIfTooSmall(cleanImage) {
   const img = await loadImage(cleanImage.dataUrl);
 
   const minShortSide = 480;
-  const width = img.width;
-  const height = img.height;
-  const shortSide = Math.min(width, height);
+  const shortSide = Math.min(img.width, img.height);
 
   if (shortSide >= minShortSide) {
     return cleanImage;
   }
 
   const scale = minShortSide / shortSide;
-  const newWidth = Math.round(width * scale);
-  const newHeight = Math.round(height * scale);
+  const newWidth = Math.round(img.width * scale);
+  const newHeight = Math.round(img.height * scale);
 
   const canvas = createCanvas(newWidth, newHeight);
   const ctx = canvas.getContext('2d');
@@ -141,8 +116,6 @@ async function resizeImageIfTooSmall(cleanImage) {
   const resizedBase64 = resizedDataUrl.split(',')[1];
   const resizedBuffer = Buffer.from(resizedBase64, 'base64');
 
-  console.log(`Image redimensionnee: ${width}x${height} -> ${newWidth}x${newHeight}`);
-
   return {
     contentType: 'image/jpeg',
     extension: 'jpg',
@@ -151,6 +124,7 @@ async function resizeImageIfTooSmall(cleanImage) {
     dataUrl: resizedDataUrl
   };
 }
+
 async function createPerfectCorpFile({ contentType, extension, imageBuffer }) {
   const response = await fetch(`${PERFECT_API_BASE}/file/skin-analysis`, {
     method: 'POST',
@@ -265,10 +239,7 @@ function getAnalysisOutputs(taskData) {
   const outputs = taskData.data?.results?.output;
 
   if (!Array.isArray(outputs)) {
-    throw new Error(
-      'Aucun output JSON exploitable. Verifie que format=json est accepte: ' +
-        JSON.stringify(taskData)
-    );
+    throw new Error('Aucun output JSON exploitable: ' + JSON.stringify(taskData));
   }
 
   return outputs;
@@ -360,44 +331,85 @@ async function drawDetectedMasks(ctx, outputs) {
   return drawn;
 }
 
-function formatScore(score) {
-  return score === null || score === undefined ? 'N/A' : `${score}/100`;
+async function uploadImageToKlaviyo(dataUrl) {
+  const response = await fetch('https://a.klaviyo.com/api/images', {
+    method: 'POST',
+    headers: {
+      Authorization: `Klaviyo-API-Key ${process.env.KLAVIYO_PRIVATE_API_KEY}`,
+      Accept: 'application/vnd.api+json',
+      'Content-Type': 'application/vnd.api+json',
+      revision: KLAVIYO_REVISION
+    },
+    body: JSON.stringify({
+      data: {
+        type: 'image',
+        attributes: {
+          import_from_url: dataUrl,
+          name: `diagnostic-peau-${Date.now()}.jpg`,
+          hidden: true
+        }
+      }
+    })
+  });
+
+  const data = await readJson(response, 'Upload image Klaviyo');
+  const imageUrl = data.data?.attributes?.image_url;
+
+  if (!imageUrl) {
+    throw new Error('Aucune image_url Klaviyo: ' + JSON.stringify(data));
+  }
+
+  return imageUrl;
 }
 
-function buildEmailHtml(scores) {
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 22px; border: 1px solid #eee; border-radius: 8px;">
-      <h2 style="margin: 0 0 12px;">Resultats de votre analyse de peau</h2>
-      <p style="line-height: 1.5; color: #444;">
-        Voici votre cartographie cutanee personnalisee avec les zones detectees par l'analyse.
-      </p>
+async function sendKlaviyoDiagnosticEvent(email, scores, cartographieUrl, taskId, drawnMasks) {
+  const response = await fetch('https://a.klaviyo.com/api/events', {
+    method: 'POST',
+    headers: {
+      Authorization: `Klaviyo-API-Key ${process.env.KLAVIYO_PRIVATE_API_KEY}`,
+      Accept: 'application/vnd.api+json',
+      'Content-Type': 'application/vnd.api+json',
+      revision: KLAVIYO_REVISION
+    },
+    body: JSON.stringify({
+      data: {
+        type: 'event',
+        attributes: {
+          metric: {
+            data: {
+              type: 'metric',
+              attributes: {
+                name: KLAVIYO_EVENT_NAME
+              }
+            }
+          },
+          profile: {
+            data: {
+              type: 'profile',
+              attributes: {
+                email
+              }
+            }
+          },
+          properties: {
+            cartographie_url: cartographieUrl,
+            score_acne: scores.acne,
+            score_pores: scores.pore,
+            score_taches: scores.spots,
+            score_rides: scores.wrinkle,
+            perfect_corp_task_id: taskId,
+            zones_detectees: drawnMasks
+          },
+          unique_id: `${email}-${taskId}-${Date.now()}`
+        }
+      }
+    })
+  });
 
-      <div style="text-align: center; margin: 22px 0;">
-        <img src="cid:skin-map" alt="Cartographie visage" style="max-width: 100%; border-radius: 8px; display: block;" />
-      </div>
-
-      <h3 style="margin: 24px 0 10px;">Vos scores</h3>
-
-      <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="padding: 9px 0; border-bottom: 1px solid #f0f0f0;">
-          <span style="display:inline-block;width:10px;height:10px;background:#9b59b6;border-radius:50%;margin-right:8px;"></span>
-          <strong>Acne / Imperfections :</strong> ${formatScore(scores.acne)}
-        </li>
-        <li style="padding: 9px 0; border-bottom: 1px solid #f0f0f0;">
-          <span style="display:inline-block;width:10px;height:10px;background:#2ecc71;border-radius:50%;margin-right:8px;"></span>
-          <strong>Pores dilates :</strong> ${formatScore(scores.pore)}
-        </li>
-        <li style="padding: 9px 0; border-bottom: 1px solid #f0f0f0;">
-          <span style="display:inline-block;width:10px;height:10px;background:#f1c40f;border-radius:50%;margin-right:8px;"></span>
-          <strong>Taches / Hyperpigmentation :</strong> ${formatScore(scores.spots)}
-        </li>
-        <li style="padding: 9px 0;">
-          <span style="display:inline-block;width:10px;height:10px;background:#e74c3c;border-radius:50%;margin-right:8px;"></span>
-          <strong>Rides & Ridules :</strong> ${formatScore(scores.wrinkle)}
-        </li>
-      </ul>
-    </div>
-  `;
+  if (response.status !== 202) {
+    const text = await response.text();
+    throw new Error(`Event Klaviyo echoue (${response.status}): ${text.slice(0, 1000)}`);
+  }
 }
 
 export default async function handler(req, res) {
@@ -412,12 +424,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    if (!process.env.RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY manquante');
-    }
-
     if (!process.env.PERFECT_CORP_SECRET_KEY) {
       throw new Error('PERFECT_CORP_SECRET_KEY manquante');
+    }
+
+    if (!process.env.KLAVIYO_PRIVATE_API_KEY) {
+      throw new Error('KLAVIYO_PRIVATE_API_KEY manquante');
     }
 
     const { email, image } = req.body || {};
@@ -444,8 +456,7 @@ export default async function handler(req, res) {
 
     const drawnMasks = await drawDetectedMasks(ctx, outputs);
 
-    const finalImageBase64 = canvas.toDataURL('image/jpeg', 0.88);
-    const finalImageAttachment = finalImageBase64.split(',')[1];
+    const finalImageBase64 = canvas.toDataURL('image/jpeg', 0.86);
 
     const scores = {
       acne: getScore(outputs, 'acne'),
@@ -454,31 +465,18 @@ export default async function handler(req, res) {
       wrinkle: getScore(outputs, 'wrinkle')
     };
 
-    const { data: emailData, error: emailError } = await resend.emails.send({
-      from: process.env.RESEND_FROM || 'Diagnostic Peau <onboarding@resend.dev>',
-      to: email,
-      subject: 'Votre cartographie cutanee personnalisee',
-      html: buildEmailHtml(scores),
-      attachments: [
-        {
-          filename: 'cartographie-visage.jpg',
-          content: finalImageAttachment,
-          contentId: 'skin-map'
-        }
-      ]
-    });
+    const cartographieUrl = await uploadImageToKlaviyo(finalImageBase64);
 
-    if (emailError) {
-      throw new Error('Erreur Resend: ' + JSON.stringify(emailError));
-    }
+    await sendKlaviyoDiagnosticEvent(email, scores, cartographieUrl, taskId, drawnMasks);
 
     return res.status(200).json({
       success: true,
+      provider: 'klaviyo',
+      eventName: KLAVIYO_EVENT_NAME,
       taskId,
       scores,
-      drawnMasks,
-      outputTypes: outputs.map((output) => output.type),
-      emailId: emailData?.id
+      cartographieUrl,
+      drawnMasks
     });
   } catch (error) {
     console.error('Erreur durant le traitement:', error);
