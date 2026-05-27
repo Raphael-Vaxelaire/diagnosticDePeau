@@ -17,34 +17,49 @@ export default async function handler(req, res) {
     const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
-    // ETAPE 1 : Upload de l'image pour obtenir un src_file_id
-    const uploadResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/file', {
+    // ETAPE 1 : Obtenir une URL d'upload signée
+    const fileResponse = await fetch('https://yce-api-01.makeupar.com/s2s/v2.0/file/skin-analysis', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        image_data: base64Data
+        files: [{
+          content_type: 'image/jpeg',
+          file_name: 'skin_analysis.jpg',
+          file_size: imageBuffer.length
+        }]
       })
     });
 
-    const uploadData = await uploadResponse.json();
-    console.log('Upload response:', JSON.stringify(uploadData));
+    const fileData = await fileResponse.json();
+    console.log('File response:', JSON.stringify(fileData));
 
-    if (!uploadData.file_id) {
-      throw new Error('Upload échoué: ' + JSON.stringify(uploadData));
+    if (!fileData.files || !fileData.files[0]) {
+      throw new Error('File creation échouée: ' + JSON.stringify(fileData));
     }
 
-    // ETAPE 2 : Lancer l'analyse avec le file_id
-    const analysisResponse = await fetch('https://yce-api-01.perfectcorp.com/s2s/v2.1/task/skin-analysis', {
+    const { upload_url, file_id } = fileData.files[0];
+
+    // ETAPE 2 : Uploader l'image sur l'URL signée
+    const uploadResponse = await fetch(upload_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: imageBuffer
+    });
+
+    console.log('Upload status:', uploadResponse.status);
+
+    // ETAPE 3 : Lancer l'analyse
+    const analysisResponse = await fetch('https://yce-api-01.makeupar.com/s2s/v2.0/task/skin-analysis', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.PERFECT_CORP_SECRET_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        src_file_id: uploadData.file_id,
+        src_file_id: file_id,
         dst_actions: ["acne", "pore", "spots", "wrinkle"]
       })
     });
@@ -52,7 +67,7 @@ export default async function handler(req, res) {
     const analysisData = await analysisResponse.json();
     console.log('Analysis response:', JSON.stringify(analysisData));
 
-    // ETAPE 3 : Canvas avec la photo d'origine
+    // ETAPE 4 : Canvas avec la photo d'origine
     const imgSource = await loadImage(image);
     const canvas = createCanvas(imgSource.width, imgSource.height);
     const ctx = canvas.getContext('2d');
